@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Neighbors in the Loop</title>
+  <desc id="desc">A neighborhood guide for local places and community life</desc>
+  <rect width="1200" height="630" fill="#344c2d"/>
+  <circle cx="1010" cy="-40" r="260" fill="#4a7254" opacity=".75"/>
+  <circle cx="1120" cy="590" r="220" fill="#d89062" opacity=".9"/>
+  <path d="M72 470c180-92 302-130 490-110 170 18 288 88 590 30" fill="none" stroke="#89a982" stroke-linecap="round" stroke-width="3" opacity=".65"/>
+  <g transform="translate(82 92)">
+    <rect width="132" height="132" rx="36" fill="#f6f8ee"/>
+    <path d="M38 55c0-12 9-22 22-22h14c12 0 22 10 22 22s-10 22-22 22H60c-12 0-22 10-22 22s10 22 22 22h14c12 0 22-10 22-22" fill="none" stroke="#344c2d" stroke-linecap="round" stroke-width="10"/>
+    <path d="M94 55c0-12-10-22-22-22H58c-12 0-22 10-22 22s10 22 22 22h14c12 0 22 10 22 22s-10 22-22 22H58" fill="none" stroke="#89a982" stroke-linecap="round" stroke-width="10"/>
+    <circle cx="66" cy="77" r="9" fill="#d89062" stroke="#f6f8ee" stroke-width="5"/>
+  </g>
+  <text x="82" y="324" fill="#f6f8ee" font-family="Georgia, serif" font-size="64" font-weight="700">Neighbors in the Loop</text>
+  <text x="88" y="392" fill="#dfead8" font-family="Arial, sans-serif" font-size="28" letter-spacing="2">FIND YOUR PEOPLE. SUPPORT YOUR PLACE.</text>
+  <text x="88" y="535" fill="#f6f8ee" font-family="Arial, sans-serif" font-size="24">Local businesses · community spaces · neighborhood life</text>
+</svg>

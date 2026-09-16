@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
+  <title id="title">Neighbors in the Loop logo</title>
+  <desc id="desc">Two connected neighborhood loops with a warm center point</desc>
+  <rect width="96" height="96" rx="26" fill="#f6f8ee"/>
+  <path d="M27 40c0-9 7-16 16-16h10c9 0 16 7 16 16s-7 16-16 16H43c-9 0-16 7-16 16s7 16 16 16h10c9 0 16-7 16-16" fill="none" stroke="#344c2d" stroke-linecap="round" stroke-width="8"/>
+  <path d="M69 40c0-9-7-16-16-16H43c-9 0-16 7-16 16s7 16 16 16h10c9 0 16 7 16 16s-7 16-16 16H43" fill="none" stroke="#89a982" stroke-linecap="round" stroke-width="8" opacity=".9"/>
+  <circle cx="48" cy="56" r="7" fill="#d89062" stroke="#f6f8ee" stroke-width="4"/>
+</svg>

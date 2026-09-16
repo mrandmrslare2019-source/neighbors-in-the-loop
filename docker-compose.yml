@@ -1,0 +1,16 @@
+services:
+  nm-app:
+    build: .
+    container_name: nm-app
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      DB_PATH: /app/data/nm-app.db
+      AUTH_SECRET: change-this-in-production
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: change-this-in-production
+      ALLOWED_ORIGIN: http://localhost:8080
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

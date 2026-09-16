@@ -1,0 +1,52 @@
+[
+  {
+    "name": "Corner Table Kitchen",
+    "category": "Food",
+    "rating": "4.9 ★",
+    "distance": "2.4 mi away",
+    "description": "Seasonal market kitchen with neighborhood dinners and house-made comfort food.",
+    "owner": "The Corner Table Team",
+    "address": "118 Maple Street",
+    "hours": "Open today · 8am-8pm"
+  },
+  {
+    "name": "Works & Co. Goods",
+    "category": "Retail",
+    "rating": "4.8 ★",
+    "distance": "1.1 mi away",
+    "description": "Independent home goods shop for thoughtful objects, gifts and daily living pieces.",
+    "owner": "Mina Torres",
+    "address": "24 Market Lane",
+    "hours": "Open today · 10am-6pm"
+  },
+  {
+    "name": "Bloom Studio",
+    "category": "Wellness",
+    "rating": "4.9 ★",
+    "distance": "0.8 mi away",
+    "description": "Yoga, therapy and care sessions designed for a balanced neighborhood lifestyle.",
+    "owner": "Avery Bloom",
+    "address": "7 Willow Court",
+    "hours": "Open today · 7am-8pm"
+  },
+  {
+    "name": "Oak & Thread Repair",
+    "category": "Service",
+    "rating": "4.7 ★",
+    "distance": "3.0 mi away",
+    "description": "A neighborhood clothing repair bar focused on care, reuse and everyday repair.",
+    "owner": "Theo Carter",
+    "address": "66 Cedar Avenue",
+    "hours": "Open today · 9am-5pm"
+  },
+  {
+    "name": "North Loop Café",
+    "category": "Food",
+    "rating": "4.7 ★",
+    "distance": "1.9 mi away",
+    "description": "Neighborhood coffee and bakery focused on slow mornings.",
+    "owner": "Lee Chen",
+    "address": "12 North Loop",
+    "hours": "Open today · 7am-6pm"
+  }
+]
