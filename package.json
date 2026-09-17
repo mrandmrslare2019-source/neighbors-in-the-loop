@@ -9,6 +9,7 @@
     "migrate": "node scripts/migrate.js"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.0",
     "sqlite3": "^6.0.1"
   }
 }
