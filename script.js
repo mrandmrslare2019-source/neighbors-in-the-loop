@@ -103,6 +103,19 @@ const defaultBusinessData = {
   }
 };
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>\"']/g, (character) => {
+    const map = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    };
+    return map[character] || character;
+  });
+}
+
 let businessData = { ...defaultBusinessData };
 let recommendationCounter = 24000;
 let donationTotalValue = Number(localStorage.getItem("neighborsInTheLoopDonationTotal") || 260);
@@ -147,7 +160,8 @@ async function saveBusinessData(business) {
     const response = await fetch(API_URL, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        Authorization: adminToken ? `Bearer ${adminToken}` : undefined
       },
       body: JSON.stringify(business)
     });
@@ -170,7 +184,8 @@ async function updateBusinessData(business) {
     const response = await fetch(`${API_URL}/${encodeURIComponent(business.name)}`, {
       method: "PUT",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        Authorization: adminToken ? `Bearer ${adminToken}` : undefined
       },
       body: JSON.stringify(business)
     });
@@ -191,7 +206,10 @@ async function updateBusinessData(business) {
 async function deleteBusinessData(name) {
   try {
     const response = await fetch(`${API_URL}/${encodeURIComponent(name)}`, {
-      method: "DELETE"
+      method: "DELETE",
+      headers: {
+        Authorization: adminToken ? `Bearer ${adminToken}` : undefined
+      }
     });
 
     if (!response.ok) {
@@ -305,18 +323,32 @@ async function loadComments(businessName) {
     comments.forEach((comment) => {
       const item = document.createElement("article");
       item.className = "comment-item";
-      item.innerHTML = `<div class="comment-item-head"><strong></strong><span class="comment-rating"></span><time></time></div><p></p><div class="comment-actions"></div>`;
-      item.querySelector("strong").textContent = comment.author;
-      item.querySelector(".comment-rating").textContent = comment.rating ? `${comment.rating} ★` : "";
-      item.querySelector("time").textContent = new Date(comment.createdAt).toLocaleDateString();
-      item.querySelector("p").textContent = comment.body;
-      const actions = item.querySelector(".comment-actions");
+
+      const head = document.createElement("div");
+      head.className = "comment-item-head";
+
+      const author = document.createElement("strong");
+      author.textContent = comment.author;
+      const rating = document.createElement("span");
+      rating.className = "comment-rating";
+      rating.textContent = comment.rating ? `${comment.rating} ★` : "";
+      const time = document.createElement("time");
+      time.textContent = new Date(comment.createdAt).toLocaleDateString();
+      head.appendChild(author);
+      head.appendChild(rating);
+      head.appendChild(time);
+
+      const body = document.createElement("p");
+      body.textContent = comment.body;
+
+      const actions = document.createElement("div");
+      actions.className = "comment-actions";
       const state = (comment.status || "approved").toLowerCase();
       if (state === "flagged") {
         const flag = document.createElement("span");
         flag.className = "comment-flagged";
         flag.textContent = "Flagged";
-        item.querySelector(".comment-item-head").appendChild(flag);
+        head.appendChild(flag);
         const approveButton = document.createElement("button");
         approveButton.type = "button";
         approveButton.className = "comment-action approve";
@@ -331,6 +363,10 @@ async function loadComments(businessName) {
         flagButton.addEventListener("click", () => flagReview(comment.id, "flagged"));
         actions.appendChild(flagButton);
       }
+
+      item.appendChild(head);
+      item.appendChild(body);
+      item.appendChild(actions);
       commentsList.appendChild(item);
     });
   } catch (error) {
@@ -384,23 +420,37 @@ async function loadModeration() {
     items.forEach((item) => {
       const card = document.createElement("article");
       card.className = "moderation-item";
-      card.innerHTML = `
-        <div>
-          <div class="moderation-meta">
-            <span class="moderation-business">${item.businessName || "Local business"}</span>
-            <span class="moderation-status">Flagged</span>
-          </div>
-          <h3>${item.author || "Anonymous"}</h3>
-          <p>${item.body || "Review pending moderation."}</p>
-        </div>
-        <button type="button" class="moderation-approve">Approve</button>
-      `;
 
-      const approveButton = card.querySelector(".moderation-approve");
+      const bodyWrap = document.createElement("div");
+      const meta = document.createElement("div");
+      meta.className = "moderation-meta";
+      const business = document.createElement("span");
+      business.className = "moderation-business";
+      business.textContent = item.businessName || "Local business";
+      const status = document.createElement("span");
+      status.className = "moderation-status";
+      status.textContent = "Flagged";
+      meta.appendChild(business);
+      meta.appendChild(status);
+
+      const h3 = document.createElement("h3");
+      h3.textContent = item.author || "Anonymous";
+      const p = document.createElement("p");
+      p.textContent = item.body || "Review pending moderation.";
+      bodyWrap.appendChild(meta);
+      bodyWrap.appendChild(h3);
+      bodyWrap.appendChild(p);
+
+      const approveButton = document.createElement("button");
+      approveButton.type = "button";
+      approveButton.className = "moderation-approve";
+      approveButton.textContent = "Approve";
       approveButton.addEventListener("click", async () => {
         await flagReview(item.id, "approved");
       });
 
+      card.appendChild(bodyWrap);
+      card.appendChild(approveButton);
       moderationList.appendChild(card);
     });
   } catch (error) {
@@ -507,22 +557,31 @@ function createBusinessCardFromData(name, data) {
   newCard.dataset.category = category;
   newCard.dataset.name = name;
   const verifiedMarkup = data.verified ? '<span class="business-verified">Verified</span>' : '';
+  const safeName = escapeHtml(name);
+  const safeDescription = escapeHtml(data.description || "");
+  const safeCategory = escapeHtml(category);
+  const safeRating = escapeHtml(data.rating || "");
+  const safeDistance = escapeHtml(data.distance || "");
+  const safeHours = escapeHtml(data.hours || "");
+  const tagMarkup = (Array.isArray(data.tags) ? data.tags : []).slice(0, 2).map((tag) => `<span class="detail-tag">${escapeHtml(tag)}</span>`).join("") || `<span class="detail-tag">${escapeHtml(category)}</span>`;
+  const photoMarkup = coverPhoto ? `<img class="business-card-image" src="${escapeHtml(coverPhoto)}" alt="${safeName}" loading="lazy" />` : "";
+
   newCard.innerHTML = `
     <div class="business-card-top">
-      <span class="business-category ${category.toLowerCase()}">${category}</span>
-      <span class="business-rating">${data.rating}</span>
+      <span class="business-category ${escapeHtml(category.toLowerCase())}">${safeCategory}</span>
+      <span class="business-rating">${safeRating}</span>
     </div>
-    ${coverPhoto ? `<img class="business-card-image" src="${coverPhoto}" alt="${name}" loading="lazy" />` : ""}
+    ${photoMarkup}
     <div class="business-title-row">
-      <h3>${name}</h3>
+      <h3>${safeName}</h3>
       ${verifiedMarkup}
     </div>
-    <p class="business-detail">${data.description}</p>
+    <p class="business-detail">${safeDescription}</p>
     <div class="business-meta">
-      <span>${data.distance}</span>
-      <span>${data.hours}</span>
+      <span>${safeDistance}</span>
+      <span>${safeHours}</span>
     </div>
-    <div class="detail-tags card-tags">${(Array.isArray(data.tags) ? data.tags : []).slice(0, 2).map((tag) => `<span class="detail-tag">${tag}</span>`).join("") || `<span class="detail-tag">${category}</span>`}</div>
+    <div class="detail-tags card-tags">${tagMarkup}</div>
     <div class="business-actions">
       <button class="business-button">Recommend</button>
       <button class="card-action" data-action="edit" type="button">Edit</button>
@@ -661,7 +720,7 @@ function renderMapMarkers() {
 
   points.forEach(({ name, coordinates, category }) => {
     const marker = L.marker([coordinates.lat, coordinates.lng]).addTo(mapMarkersLayer);
-    marker.bindPopup(`<strong>${name}</strong><br>${category}`);
+    marker.bindPopup(`<strong>${escapeHtml(name)}</strong><br>${escapeHtml(category)}`);
     marker.on("click", () => {
       const businessCard = Array.from(document.querySelectorAll(".business-card")).find((card) => card.dataset.name === name);
       if (businessCard) {
