@@ -837,12 +837,6 @@ function createServer(options = {}) {
         }
 
         if (request.method === "POST") {
-          const tokenUser = readAuthToken(request);
-          if (tokenUser && tokenUser.role !== "admin") {
-            sendJson(response, 403, { error: "Administrator access is required to create businesses." });
-            return;
-          }
-
           const payload = await readRequestBody(request);
           const businesses = await readBusinesses(db);
 
