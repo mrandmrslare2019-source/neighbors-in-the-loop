@@ -12,14 +12,14 @@ function createTestServer(options = {}) {
   return createServer({ dbPath: uniqueDbPath, ...options });
 }
 
-function sendRequest(server, path, method = "GET", payload, extraHeaders = {}) {
+function sendRequest(server, pathName, method = "GET", payload, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     const data = payload ? JSON.stringify(payload) : null;
     const request = http.request(
       {
         host: "127.0.0.1",
         port: server.address().port,
-        path,
+        path: pathName,
         method,
         headers: data
           ? {
@@ -53,6 +53,15 @@ function sendRequest(server, path, method = "GET", payload, extraHeaders = {}) {
   });
 }
 
+async function loginAsAdmin(server, email = "admin@example.com", password = "admin-password") {
+  const response = await sendRequest(server, "/api/auth/login", "POST", {
+    email,
+    password
+  });
+  const body = JSON.parse(response.body);
+  return body.token;
+}
+
 test("GET /api/businesses returns an array", async () => {
   const server = createTestServer();
   await new Promise((resolve) => server.listen(0, resolve));
@@ -63,6 +72,22 @@ test("GET /api/businesses returns an array", async () => {
     const businesses = JSON.parse(response.body);
     assert.ok(Array.isArray(businesses));
     assert.ok(businesses.length > 0);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("GET /api/businesses supports neighborhood filter", async () => {
+  const server = createTestServer();
+  await new Promise((resolve) => server.listen(0, resolve));
+
+  try {
+    const response = await sendRequest(server, "/api/businesses?neighborhood=Maple");
+    assert.equal(response.statusCode, 200);
+    const businesses = JSON.parse(response.body);
+    assert.ok(Array.isArray(businesses));
+    assert.ok(businesses.some((business) => business.neighborhood && business.neighborhood.toLowerCase().includes("maple")));
+    assert.ok(businesses.every((business) => !business.neighborhood || business.neighborhood.toLowerCase().includes("maple")));
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -81,34 +106,50 @@ test("POST /api/businesses creates a new business", async () => {
       description: "Neighborhood coffee and bakery focused on slow mornings.",
       owner: "Lee Chen",
       address: "12 North Loop",
-      hours: "Open today · 7am-6pm"
+      hours: "Open today · 7am-6pm",
+      neighborhood: "North Loop",
+      coordinates: { lat: 41.8731, lng: -87.6392 }
     };
 
-    const response = await sendRequest(server, "/api/businesses", "POST", payload);
+    const response = await sendRequest(server, "/api/businesses", "POST", payload, {
+      Authorization: "Bearer invalidtoken"
+    });
     assert.equal(response.statusCode, 201);
 
     const responseBody = JSON.parse(response.body);
     assert.equal(responseBody.name, "North Loop Café");
+    assert.equal(responseBody.neighborhood, "North Loop");
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
 });
 
-test("PUT and DELETE update and remove a business", async () => {
-  const server = createTestServer();
+test("PUT and DELETE update and remove a business when authenticated as admin", async () => {
+  const server = createTestServer({
+    adminCredentials: { email: "admin@example.com", password: "admin-password" }
+  });
   await new Promise((resolve) => server.listen(0, resolve));
 
   try {
-    const created = await sendRequest(server, "/api/businesses", "POST", {
-      name: "Market Street Studio",
-      category: "Retail",
-      rating: "4.8 ★",
-      distance: "1.2 mi away",
-      description: "Curated products for home and craft.",
-      owner: "Sam Ortiz",
-      address: "44 Market Street",
-      hours: "Open today · 11am-7pm"
-    });
+    const adminToken = await loginAsAdmin(server);
+    const created = await sendRequest(
+      server,
+      "/api/businesses",
+      "POST",
+      {
+        name: "Market Street Studio",
+        category: "Retail",
+        rating: "4.8 ★",
+        distance: "1.2 mi away",
+        description: "Curated products for home and craft.",
+        owner: "Sam Ortiz",
+        address: "44 Market Street",
+        hours: "Open today · 11am-7pm",
+        neighborhood: "Market Street",
+        coordinates: { lat: 41.8812, lng: -87.6329 }
+      },
+      { Authorization: `Bearer ${adminToken}` }
+    );
 
     assert.equal(created.statusCode, 201);
 
@@ -124,15 +165,20 @@ test("PUT and DELETE update and remove a business", async () => {
         description: "Updated inventory and craft workshops.",
         owner: "Sam Ortiz",
         address: "44 Market Street",
-        hours: "Open today · 11am-7pm"
-      }
+        hours: "Open today · 11am-7pm",
+        neighborhood: "Market Street",
+        coordinates: { lat: 41.8812, lng: -87.6329 }
+      },
+      { Authorization: `Bearer ${adminToken}` }
     );
 
     assert.equal(updated.statusCode, 200);
     const updatedBody = JSON.parse(updated.body);
     assert.equal(updatedBody.rating, "5.0 ★");
 
-    const removed = await sendRequest(server, "/api/businesses/Market%20Street%20Studio", "DELETE");
+    const removed = await sendRequest(server, "/api/businesses/Market%20Street%20Studio", "DELETE", undefined, {
+      Authorization: `Bearer ${adminToken}`
+    });
     assert.equal(removed.statusCode, 200);
     const list = JSON.parse((await sendRequest(server, "/api/businesses")).body);
     assert.ok(!list.some((business) => business.name === "Market Street Studio"));
@@ -193,7 +239,7 @@ test("POST /api/businesses stores coordinates and profile details", async () => 
       tags: ["creative", "design"]
     };
 
-    const response = await sendRequest(server, "/api/businesses", "POST", payload);
+    const response = await sendRequest(server, "/api/businesses", "POST", payload, { Authorization: "Bearer invalidtoken" });
     assert.equal(response.statusCode, 201);
 
     const saved = JSON.parse(response.body);
@@ -291,6 +337,7 @@ test("GET /api/admin/moderation returns flagged review details", async () => {
   await new Promise((resolve) => server.listen(0, resolve));
 
   try {
+    const adminToken = await loginAsAdmin(server);
     await sendRequest(server, "/api/comments", "POST", {
       businessName: "Bloom Studio",
       author: "Casey Lane",
@@ -299,12 +346,6 @@ test("GET /api/admin/moderation returns flagged review details", async () => {
       status: "flagged"
     });
 
-    const login = await sendRequest(server, "/api/auth/login", "POST", {
-      email: "admin@example.com",
-      password: "admin-password"
-    });
-    assert.equal(login.statusCode, 200);
-    const adminToken = JSON.parse(login.body).token;
     const response = await sendRequest(server, "/api/admin/moderation", "GET", undefined, {
       Authorization: `Bearer ${adminToken}`
     });
@@ -317,3 +358,48 @@ test("GET /api/admin/moderation returns flagged review details", async () => {
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test("Averages rating from comments and returns it in business results", async () => {
+  const server = createTestServer();
+  await new Promise((resolve) => server.listen(0, resolve));
+
+  try {
+    await sendRequest(server, "/api/comments", "POST", {
+      businessName: "Corner Table Kitchen",
+      author: "Reviewer 1",
+      rating: 5,
+      body: "Great food and service."
+    });
+
+    await sendRequest(server, "/api/comments", "POST", {
+      businessName: "Corner Table Kitchen",
+      author: "Reviewer 2",
+      rating: 3,
+      body: "Good food, a little noisy."
+    });
+
+    const response = await sendRequest(server, "/api/businesses");
+    assert.equal(response.statusCode, 200);
+    const businesses = JSON.parse(response.body);
+    const match = businesses.find((business) => business.name === "Corner Table Kitchen");
+    assert.ok(match);
+    assert.equal(match.rating, "4.0 ★");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("Requesting user profile without auth is rejected", async () => {
+  const server = createTestServer();
+  await new Promise((resolve) => server.listen(0, resolve));
+
+  try {
+    const response = await sendRequest(server, "/api/users", "GET");
+    assert.equal(response.statusCode, 401);
+    const payload = JSON.parse(response.body);
+    assert.match(payload.error, /Authentication required/i);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
