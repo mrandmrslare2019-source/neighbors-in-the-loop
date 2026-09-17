@@ -2,6 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const bcrypt = require("bcryptjs");
 const { URL } = require("url");
 const sqlite3 = require("sqlite3").verbose();
 
@@ -470,7 +471,21 @@ function sanitizeUser(record) {
 }
 
 function hashPassword(password) {
-  return crypto.createHash("sha256").update(`${String(password || "")}${AUTH_SECRET}`).digest("hex");
+  return bcrypt.hashSync(String(password || ""), 12);
+}
+
+function verifyPassword(password, storedHash) {
+  const candidate = String(password || "");
+  if (!storedHash) {
+    return false;
+  }
+
+  if (storedHash.startsWith("$2") || storedHash.startsWith("$2a") || storedHash.startsWith("$2b")) {
+    return bcrypt.compareSync(candidate, storedHash);
+  }
+
+  const legacyHash = crypto.createHash("sha256").update(`${candidate}${AUTH_SECRET}`).digest("hex");
+  return legacyHash === storedHash;
 }
 
 function issueAuthToken(user) {
@@ -529,7 +544,7 @@ function sanitizeAuthCredentials(record) {
   const email = String(record.email || "").trim().toLowerCase();
   const password = String(record.password || "").trim();
 
-  if (!email || !password || password.length < 6) {
+  if (!email || !password || password.length < 6 || !email.includes("@")) {
     throw new Error("A valid email and password of at least 6 characters are required.");
   }
 
@@ -667,7 +682,7 @@ function createServer(options = {}) {
         response.writeHead(204, {
           "Access-Control-Allow-Origin": ALLOWED_ORIGIN || "*",
           "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type"
+          "Access-Control-Allow-Headers": "Content-Type, Authorization"
         });
         response.end();
         return;
@@ -758,6 +773,10 @@ function createServer(options = {}) {
         }
 
         if (request.method === "POST") {
+          if (!requireAdmin(request, response)) {
+            return;
+          }
+
           const payload = await readRequestBody(request);
           const businesses = await readBusinesses(db);
 
@@ -819,7 +838,7 @@ function createServer(options = {}) {
 
         const payload = sanitizeAuthCredentials(await readRequestBody(request));
         const row = await dbAll(db, "SELECT id, name, email, password_hash AS passwordHash, role FROM auth_users WHERE email = ?", [payload.email]);
-        if (!row.length || row[0].passwordHash !== hashPassword(payload.password)) {
+        if (!row.length || !verifyPassword(payload.password, row[0].passwordHash)) {
           sendJson(response, 401, { error: "Invalid email or password." });
           return;
         }
@@ -905,6 +924,10 @@ function createServer(options = {}) {
         }
 
         if (request.method === "PUT") {
+          if (!requireAdmin(request, response)) {
+            return;
+          }
+
           const payload = await readRequestBody(request);
           const updatedBusiness = sanitizeBusiness(payload);
           const nextList = [...businesses];
@@ -921,6 +944,10 @@ function createServer(options = {}) {
         }
 
         if (request.method === "DELETE") {
+          if (!requireAdmin(request, response)) {
+            return;
+          }
+
           if (targetIndex === -1) {
             sendJson(response, 404, { error: "Business not found" });
             return;
