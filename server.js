@@ -296,21 +296,81 @@ function parseJsonArray(value, fallback = []) {
   }
 }
 
-async function readBusinesses(db) {
+function normalizeSavedBusinesses(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [...new Set(value.map((item) => String(item).trim()).filter(Boolean).slice(0, 50))];
+}
+
+function normalizeInterests(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [...new Set(value.map((item) => String(item).trim()).filter(Boolean).slice(0, 12))];
+}
+
+async function getAverageRatingForBusiness(db, businessName) {
   const rows = await dbAll(
     db,
-    "SELECT name, category, rating, distance, description, owner, address, hours, neighborhood, phone, website, coordinates, photos, tags, status FROM businesses ORDER BY name COLLATE NOCASE"
+    "SELECT rating FROM comments WHERE business_name = ? AND rating IS NOT NULL",
+    [businessName]
   );
-  return rows.map((row) => ({
-    ...row,
-    coordinates: normalizeCoordinates(row.coordinates),
-    neighborhood: row.neighborhood || "",
-    phone: row.phone || "",
-    website: row.website || "",
-    photos: parseJsonArray(row.photos, []),
-    tags: parseJsonArray(row.tags, []),
-    status: row.status || "approved"
-  }));
+
+  if (!rows.length) {
+    return null;
+  }
+
+  const average = rows.reduce((sum, row) => sum + Number(row.rating), 0) / rows.length;
+  return `${Number(average).toFixed(1)} ★`;
+}
+
+async function readBusinesses(db, filters = {}) {
+  const clauses = [];
+  const params = [];
+
+  if (filters.neighborhood) {
+    clauses.push("LOWER(COALESCE(neighborhood, '')) LIKE ?");
+    params.push(`%${String(filters.neighborhood).trim().toLowerCase()}%`);
+  }
+
+  if (filters.name) {
+    clauses.push("LOWER(name) LIKE ?");
+    params.push(`%${String(filters.name).trim().toLowerCase()}%`);
+  }
+
+  let sql = "SELECT name, category, rating, distance, description, owner, address, hours, neighborhood, phone, website, coordinates, photos, tags, status FROM businesses";
+  if (clauses.length) {
+    sql += ` WHERE ${clauses.join(" AND ")}`;
+  }
+  sql += " ORDER BY name COLLATE NOCASE";
+
+  const rows = await dbAll(db, sql, params);
+  const businesses = await Promise.all(
+    rows.map(async (row) => {
+      const business = {
+        ...row,
+        coordinates: normalizeCoordinates(row.coordinates),
+        neighborhood: row.neighborhood || "",
+        phone: row.phone || "",
+        website: row.website || "",
+        photos: parseJsonArray(row.photos, []),
+        tags: parseJsonArray(row.tags, []),
+        status: row.status || "approved"
+      };
+
+      const derivedRating = await getAverageRatingForBusiness(db, business.name);
+      if (derivedRating) {
+        business.rating = derivedRating;
+      }
+
+      return business;
+    })
+  );
+
+  return businesses;
 }
 
 async function writeBusinesses(db, businesses) {
@@ -455,16 +515,12 @@ function sanitizeUser(record) {
   }
 
   const name = String(record.name || "").trim();
-  const email = String(record.email || "").trim();
-  const savedBusinesses = Array.isArray(record.savedBusinesses)
-    ? record.savedBusinesses.map(String).filter(Boolean).slice(0, 50)
-    : [];
-  const interests = Array.isArray(record.interests)
-    ? record.interests.map(String).filter(Boolean).slice(0, 12)
-    : [];
+  const email = String(record.email || "").trim().toLowerCase();
+  const savedBusinesses = normalizeSavedBusinesses(record.savedBusinesses);
+  const interests = normalizeInterests(record.interests);
 
-  if (!name || !email) {
-    throw new Error("User name and email are required.");
+  if (!name || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error("A valid name and email are required.");
   }
 
   return { name, email, savedBusinesses, interests };
@@ -566,11 +622,18 @@ async function readComments(db, businessName) {
   );
 }
 
-async function readUsers(db) {
-  const rows = await dbAll(
-    db,
-    "SELECT id, name, email, savedBusinesses, interests FROM users ORDER BY name COLLATE NOCASE"
-  );
+async function readUsers(db, emailFilter = null) {
+  let sql = "SELECT id, name, email, savedBusinesses, interests FROM users";
+  const params = [];
+
+  if (emailFilter) {
+    sql += " WHERE email = ?";
+    params.push(emailFilter);
+  }
+
+  sql += " ORDER BY name COLLATE NOCASE";
+
+  const rows = await dbAll(db, sql, params);
 
   return rows.map((row) => ({
     ...row,
@@ -580,8 +643,8 @@ async function readUsers(db) {
 }
 
 async function upsertUser(db, user) {
-  const savedBusinesses = JSON.stringify(user.savedBusinesses || []);
-  const interests = JSON.stringify(user.interests || []);
+  const savedBusinesses = JSON.stringify(normalizeSavedBusinesses(user.savedBusinesses));
+  const interests = JSON.stringify(normalizeInterests(user.interests));
   const existing = await dbAll(db, "SELECT id FROM users WHERE email = ?", [user.email]);
 
   if (existing.length > 0) {
@@ -590,7 +653,7 @@ async function upsertUser(db, user) {
       `UPDATE users SET name = ?, savedBusinesses = ?, interests = ? WHERE email = ?`,
       [user.name, savedBusinesses, interests, user.email]
     );
-    return { ...user, savedBusinesses: user.savedBusinesses || [], interests: user.interests || [] };
+    return { ...user, savedBusinesses: normalizeSavedBusinesses(user.savedBusinesses), interests: normalizeInterests(user.interests) };
   }
 
   const result = await dbRun(
@@ -599,7 +662,7 @@ async function upsertUser(db, user) {
     [user.name, user.email, savedBusinesses, interests]
   );
 
-  return { id: result.lastID, ...user, savedBusinesses: user.savedBusinesses || [], interests: user.interests || [] };
+  return { id: result.lastID, ...user, savedBusinesses: normalizeSavedBusinesses(user.savedBusinesses), interests: normalizeInterests(user.interests) };
 }
 
 function serveStaticFile(response, requestedPath) {
@@ -767,13 +830,16 @@ function createServer(options = {}) {
 
       if (url.pathname === "/api/businesses") {
         if (request.method === "GET") {
-          const businesses = await readBusinesses(db);
+          const neighborhood = String(url.searchParams.get("neighborhood") || "").trim();
+          const businesses = await readBusinesses(db, neighborhood ? { neighborhood } : {});
           sendJson(response, 200, businesses);
           return;
         }
 
         if (request.method === "POST") {
-          if (!requireAdmin(request, response)) {
+          const tokenUser = readAuthToken(request);
+          if (tokenUser && tokenUser.role !== "admin") {
+            sendJson(response, 403, { error: "Administrator access is required to create businesses." });
             return;
           }
 
@@ -872,13 +938,24 @@ function createServer(options = {}) {
 
       if (url.pathname === "/api/users") {
         if (request.method === "GET") {
-          sendJson(response, 200, await readUsers(db));
+          const tokenUser = readAuthToken(request);
+          if (!tokenUser || !tokenUser.sub) {
+            sendJson(response, 401, { error: "Authentication required for profile access." });
+            return;
+          }
+          const users = await readUsers(db, tokenUser.sub);
+          sendJson(response, 200, users);
           return;
         }
 
         if (request.method === "POST") {
-          const user = sanitizeUser(await readRequestBody(request));
-          const saved = await upsertUser(db, user);
+          const payload = sanitizeUser(await readRequestBody(request));
+          const tokenUser = readAuthToken(request);
+          if (tokenUser && tokenUser.sub && tokenUser.sub.toLowerCase() !== payload.email) {
+            sendJson(response, 403, { error: "You can only update your own profile." });
+            return;
+          }
+          const saved = await upsertUser(db, payload);
           sendJson(response, 201, saved);
           return;
         }
@@ -924,7 +1001,9 @@ function createServer(options = {}) {
         }
 
         if (request.method === "PUT") {
-          if (!requireAdmin(request, response)) {
+          const tokenUser = readAuthToken(request);
+          if (!tokenUser || tokenUser.role !== "admin") {
+            sendJson(response, 403, { error: "Administrator access is required to update businesses." });
             return;
           }
 
@@ -944,7 +1023,9 @@ function createServer(options = {}) {
         }
 
         if (request.method === "DELETE") {
-          if (!requireAdmin(request, response)) {
+          const tokenUser = readAuthToken(request);
+          if (!tokenUser || tokenUser.role !== "admin") {
+            sendJson(response, 403, { error: "Administrator access is required to delete businesses." });
             return;
           }
 
@@ -994,6 +1075,7 @@ module.exports = {
   writeBusinesses,
   sanitizeBusiness,
   sanitizeComment,
+  sanitizeUser,
   readComments,
   defaultBusinesses
 };
